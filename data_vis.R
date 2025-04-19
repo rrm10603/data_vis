@@ -14,6 +14,7 @@ states_sf <- sf::st_read(url)
 
 #data files 
 
+#linux path
 wonder <-read_excel("/home/robmcneil/Documents/data_vis/vis_project/Provisional Mortality Statistics, 2018 through Last Week (1).xlsx")
 wonder <- wonder |>
   select(-Notes,'Year Code')|>
