@@ -4,7 +4,8 @@ library(tidyr)
 library(sf)
 library(leaflet)
 library(readxl)
-library(ggstream)
+library(RColorBrewer)
+
 
 
 
@@ -16,17 +17,17 @@ states_sf <- sf::st_read(url)
 #data files 
 
 #linux path
-#wonder <-read_excel("/home/robmcneil/Documents/data_vis/vis_project/Provisional Mortality Statistics, 2018 through Last Week (1).xlsx")
+wonder <-read_excel("/home/robmcneil/Documents/data_vis/vis_project/Provisional Mortality Statistics, 2018 through Last Week (1).xlsx")
 #windows path
-wonder <-read_excel("C:/Users/rrm10/OneDrive/Desktop/vis_project/Provisional Mortality Statistics^J 2018 through Last Week (1).xlsx")
+#wonder <-read_excel("C:/Users/rrm10/OneDrive/Desktop/vis_project/Provisional Mortality Statistics^J 2018 through Last Week (1).xlsx")
 wonder <- wonder |>
   select(-Notes, -`Year Code`) |>
   filter(Year != "2024 (provisional") |>
   mutate(`Crude Rate` = as.numeric(ifelse(`Crude Rate` == "Unreliable", NA, `Crude Rate`)))
 #linux path
-#dose <- read.delim("/home/robmcneil/Documents/data_vis/vis_project/cdc_dose.txt")
+dose <- read.delim("/home/robmcneil/Documents/data_vis/vis_project/cdc_dose.txt")
 #windows path 
-dose <- read.delim("C:/Users/rrm10/OneDrive/Desktop/vis_project/cdc_dose.txt")
+#dose <- read.delim("C:/Users/rrm10/OneDrive/Desktop/vis_project/cdc_dose.txt")
 dose <- dose |>
   mutate(across(starts_with("X"), ~ as.numeric(.))) |>
   `colnames<-`(gsub("^X", "", colnames(dose))) |>
@@ -34,13 +35,13 @@ dose <- dose |>
                names_to = "Year",            
                values_to = "Dose Rate")     
 #linux  path
-#bp<-read.csv("/home/robmcneil/Documents/data_vis/vis_project/State Buprenorphine Dispensing Rates.csv")
+bp<-read.csv("/home/robmcneil/Documents/data_vis/vis_project/State Buprenorphine Dispensing Rates.csv")
 #windows path
-bp<-read.csv("C:/Users/rrm10/OneDrive/Desktop/vis_project/State Buprenorphine Dispensing Rates.csv")
+#bp<-read.csv("C:/Users/rrm10/OneDrive/Desktop/vis_project/State Buprenorphine Dispensing Rates.csv")
 #linux path
-#naloxone <-read.csv("/home/robmcneil/Documents/data_vis/vis_project/State Naloxone Dispensing Rates (1).csv")
+naloxone <-read.csv("/home/robmcneil/Documents/data_vis/vis_project/State Naloxone Dispensing Rates (1).csv")
 #windows path
-naloxone <-read.csv("C:/Users/rrm10/OneDrive/Desktop/vis_project/State Naloxone Dispensing Rates (1).csv")
+#naloxone <-read.csv("C:/Users/rrm10/OneDrive/Desktop/vis_project/State Naloxone Dispensing Rates (1).csv")
 
 
 dose$Year <- as.integer(dose$Year)
@@ -76,7 +77,7 @@ unique(combined_data$`Multiple Cause of death`)
 
 #line plot 
 
-ggplot(combined_data %>%
+ggplot(combined_data |>
          filter(!is.na(`Crude Rate`),
                 `Multiple Cause of death` %in% c("Heroin", "Methadone",
                                                  "Other synthetic narcotics", "Cocaine",
@@ -113,7 +114,176 @@ ggplot(national, aes(x = Year, y = crude_rate, group = `Multiple Cause of death`
   )
 
 
+## chloropleth 
+
+map_data <- combined_data |>
+  filter(Year %in% 2019:2023) |>
+  select(State = `Residence State`, Year, 
+         naloxone_disp = `Naloxone.Dispensing.Rate..per.100.persons.`,
+         bupe_disp = `Buprenorphine.Dispensing.Rate..per.100.persons.`,
+         cause = `Multiple Cause of death`,
+         crude_rate = `Crude Rate`) |>
+  filter(!is.na(naloxone_disp)) |>
+  mutate(naloxone_disp = factor(naloxone_disp, 
+                                levels = c("<0.2", "0.2 - 0.4", "0.5 - 0.6", ">0.6"),
+                                ordered = TRUE))
 
 
 
 
+#may need wide format for this to work 
+
+
+# Join spatial data
+states_map <- states_sf |>
+  left_join(map_data, by = c("name" = "State"))
+
+
+
+pal <- colorFactor(
+  palette = brewer.pal(4, "Blues"),  # 4 categories
+  domain = states_map$naloxone_disp,
+  ordered = TRUE
+)
+
+leaflet(states_map) |>
+  addProviderTiles("CartoDB.Positron") |>
+  addPolygons(
+    fillColor = ~pal(naloxone_disp),
+    color = "white",
+    weight = 1,
+    fillOpacity = 0.7,
+    label = ~paste0(
+      name, "<br>",
+      "Naloxone Rate: ", naloxone_disp, "<br>",
+      "Cause: ", cause, "<br>",
+      "Crude Rate: ", crude_rate
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      color = "#666",
+      fillOpacity = 0.9,
+      bringToFront = TRUE
+    )
+  ) |>
+  addLegend(
+    pal = pal,
+    values = ~naloxone_disp,
+    title = "Naloxone Dispensing Rate",
+    position = "bottomright"
+  )
+
+
+
+
+
+##############
+
+
+map_data_wide <- map_data |>
+  filter(Year == 2019) |>
+  select(State, naloxone_disp, cause, crude_rate) |>
+  pivot_wider(
+    names_from = cause,
+    values_from = crude_rate
+  ) |>
+  distinct()
+
+# Now join to spatial
+states_map <- states_sf |>
+  left_join(map_data_wide, by = c("name" = "State"))
+
+
+
+leaflet(states_map) |>
+  addProviderTiles("CartoDB.Positron") |>
+  addPolygons(
+    fillColor = ~pal(naloxone_disp),
+    color = "white",
+    weight = 1,
+    fillOpacity = 0.7,
+    label = ~paste0(
+      name, "<br>",
+      "Naloxone Rate: ", naloxone_disp, "<br><br>",
+      "Heroin: ", round(Heroin, 1), "<br>",
+      "Methadone: ", round(Methadone, 1), "<br>",
+      "Cocaine: ", round(Cocaine, 1), "<br>",
+      "Other synthetics: ", round(`Other synthetic narcotics`, 1), "<br>",
+      "Psychostimulants: ", round(`Psychostimulants with abuse potential`, 1)
+    ) |>
+      lapply(htmltools::HTML),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      color = "#666",
+      fillOpacity = 0.9,
+      bringToFront = TRUE
+    )
+  ) |>
+  addLegend(
+    pal = pal,
+    values = ~naloxone_disp,
+    title = "Naloxone Dispensing Rate",
+    position = "bottomright"
+  )
+
+
+
+
+####final ready for shiny 
+
+
+sliderInput("year", "Select Year:", min = 2019, max = 2023, value = 2019, sep = "")
+
+selectInput("disp_var", "Select Dispensing Rate:", 
+            choices = c("Naloxone" = "naloxone_disp", 
+                        "Buprenorphine" = "bupe_disp"),
+            selected = "naloxone_disp")
+
+map_data_wide <- reactive({
+  map_data |>
+    filter(Year == input$year) |>
+    select(State, naloxone_disp, cause, crude_rate) |>
+    pivot_wider(
+      names_from = cause,
+      values_from = crude_rate
+    ) |>
+    distinct()
+})
+
+states_map <- reactive({
+  states_sf |>
+    left_join(map_data_wide(), by = c("name" = "State"))
+})
+
+output$map <- renderLeaflet({
+  leaflet(states_map()) |>
+    addProviderTiles("CartoDB.Positron") |>
+    addPolygons(
+      fillColor = ~pal(naloxone_disp),
+      color = "white",
+      weight = 1,
+      fillOpacity = 0.7,
+      label = ~paste0(
+        name, "<br>",
+        "Naloxone Rate: ", naloxone_disp, "<br><br>",
+        "Heroin: ", round(Heroin, 1), "<br>",
+        "Methadone: ", round(Methadone, 1), "<br>",
+        "Cocaine: ", round(Cocaine, 1), "<br>",
+        "Other synthetics: ", round(`Other synthetic narcotics`, 1), "<br>",
+        "Psychostimulants: ", round(`Psychostimulants with abuse potential`, 1)
+      ) |>
+        lapply(htmltools::HTML),
+      highlightOptions = highlightOptions(
+        weight = 2,
+        color = "#666",
+        fillOpacity = 0.9,
+        bringToFront = TRUE
+      )
+    ) |>
+    addLegend(
+      pal = pal,
+      values = ~naloxone_disp,
+      title = "Naloxone Dispensing Rate",
+      position = "bottomright"
+    )
+})
