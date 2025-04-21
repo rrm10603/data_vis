@@ -5,7 +5,8 @@ library(sf)
 library(leaflet)
 library(readxl)
 library(RColorBrewer)
-
+library(shiny)
+library(htmltools)
 
 
 
@@ -239,10 +240,29 @@ selectInput("disp_var", "Select Dispensing Rate:",
                         "Buprenorphine" = "bupe_disp"),
             selected = "naloxone_disp")
 
+
+disp_var <- reactive({
+  input$disp_var
+})
+
+
+
+color_pal <- reactive({
+  if (disp_var() == "naloxone_disp") {
+    colorFactor(palette = brewer.pal(4, "Blues"), 
+                domain = states_map()[[disp_var()]],
+                ordered = TRUE)
+  } else {
+    colorFactor(palette = brewer.pal(4, "Reds"), 
+                domain = states_map()[[disp_var()]],
+                ordered = TRUE)
+  }
+})
+
 map_data_wide <- reactive({
   map_data |>
     filter(Year == input$year) |>
-    select(State, naloxone_disp, cause, crude_rate) |>
+    select(State, naloxone_disp,bupe_disp, cause, crude_rate) |>
     pivot_wider(
       names_from = cause,
       values_from = crude_rate
@@ -258,21 +278,25 @@ states_map <- reactive({
 output$map <- renderLeaflet({
   leaflet(states_map()) |>
     addProviderTiles("CartoDB.Positron") |>
+    setView(lng = -98.5795, lat = 39.8283, zoom = 3.5) |>  # Center on the contiguous U.S. 
     addPolygons(
-      fillColor = ~pal(naloxone_disp),
+      fillColor = ~color_pal()(get(disp_var())),
       color = "white",
       weight = 1,
       fillOpacity = 0.7,
       label = ~paste0(
         name, "<br>",
-        "Naloxone Rate: ", naloxone_disp, "<br><br>",
+        if (disp_var() == "naloxone_disp") {
+          paste0("Naloxone Rate: ", naloxone_disp)
+        } else {
+          paste0("Buprenorphine Rate: ", bupe_disp)
+        }, "<br><br>",
         "Heroin: ", round(Heroin, 1), "<br>",
         "Methadone: ", round(Methadone, 1), "<br>",
         "Cocaine: ", round(Cocaine, 1), "<br>",
         "Other synthetics: ", round(`Other synthetic narcotics`, 1), "<br>",
         "Psychostimulants: ", round(`Psychostimulants with abuse potential`, 1)
-      ) |>
-        lapply(htmltools::HTML),
+      ) |> lapply(htmltools::HTML),
       highlightOptions = highlightOptions(
         weight = 2,
         color = "#666",
@@ -281,9 +305,113 @@ output$map <- renderLeaflet({
       )
     ) |>
     addLegend(
-      pal = pal,
-      values = ~naloxone_disp,
-      title = "Naloxone Dispensing Rate",
+      pal = color_pal(),
+      values = ~get(disp_var()),
+      title = if (disp_var() == "naloxone_disp") {
+        "Naloxone Dispensing Rate"
+      } else {
+        "Buprenorphine Dispensing Rate"
+      },
       position = "bottomright"
     )
 })
+
+
+
+
+#shiny 
+
+
+ui <- fluidPage(
+  titlePanel("Opioid Dispensing & Mortality"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("year", "Select Year:", min = 2019, max = 2023, value = 2019, sep = ""),
+      selectInput("disp_var", "Select Dispensing Rate:", 
+                  choices = c("Naloxone" = "naloxone_disp", 
+                              "Buprenorphine" = "bupe_disp"),
+                  selected = "naloxone_disp")
+    ),
+    
+    mainPanel(
+      leafletOutput("map", height = 700)
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  disp_var <- reactive({ input$disp_var })
+  
+  color_pal <- reactive({
+    if (disp_var() == "naloxone_disp") {
+      colorFactor(palette = brewer.pal(4, "Blues"), 
+                  domain = states_map()[[disp_var()]],
+                  ordered = TRUE)
+    } else {
+      colorFactor(palette = brewer.pal(4, "Reds"), 
+                  domain = states_map()[[disp_var()]],
+                  ordered = TRUE)
+    }
+  })
+  
+  map_data_wide <- reactive({
+    map_data |>
+      filter(Year == input$year) |>
+      select(State, naloxone_disp, bupe_disp, cause, crude_rate) |>
+      pivot_wider(
+        names_from = cause,
+        values_from = crude_rate
+      ) |>
+      distinct()
+  })
+  
+  states_map <- reactive({
+    states_sf |>
+      left_join(map_data_wide(), by = c("name" = "State"))
+  })
+  
+  output$map <- renderLeaflet({
+    leaflet(states_map()) |>
+      addProviderTiles("CartoDB.Positron") |>
+      setView(lng = -98.5795, lat = 39.8283, zoom = 3.5) |>
+      addPolygons(
+        fillColor = ~color_pal()(get(disp_var())),
+        color = "white",
+        weight = 1,
+        fillOpacity = 0.7,
+        label = ~paste0(
+          name, "<br>",
+          if (disp_var() == "naloxone_disp") {
+            paste0("Naloxone Rate: ", naloxone_disp)
+          } else {
+            paste0("Buprenorphine Rate: ", bupe_disp)
+          }, "<br><br>",
+          "Heroin: ", round(Heroin, 1), "<br>",
+          "Methadone: ", round(Methadone, 1), "<br>",
+          "Cocaine: ", round(Cocaine, 1), "<br>",
+          "Other synthetics: ", round(`Other synthetic narcotics`, 1), "<br>",
+          "Psychostimulants: ", round(`Psychostimulants with abuse potential`, 1)
+        ) |> lapply(htmltools::HTML),
+        highlightOptions = highlightOptions(
+          weight = 2,
+          color = "#666",
+          fillOpacity = 0.9,
+          bringToFront = TRUE
+        )
+      ) |>
+      addLegend(
+        pal = color_pal(),
+        values = ~get(disp_var()),
+        title = if (disp_var() == "naloxone_disp") {
+          "Naloxone Dispensing Rate"
+        } else {
+          "Buprenorphine Dispensing Rate"
+        },
+        position = "bottomright"
+      )
+  })
+}
+
+shinyApp(ui = ui, server = server)
