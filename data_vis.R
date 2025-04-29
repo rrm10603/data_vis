@@ -7,7 +7,7 @@ library(readxl)
 library(RColorBrewer)
 library(shiny)
 library(htmltools)
-
+library(plotly)
 
 
 # read files 
@@ -103,7 +103,7 @@ ui <- navbarPage("Overdose Visualization Dashboard",
                           sidebarLayout(
                             sidebarPanel(
                               selectInput("region_select", "Select Region:",
-                                          choices = unique(combined_data$region), selected = "West"),
+                                          choices = unique(na.omit(combined_data$region)), selected = "South"),
                               checkboxGroupInput("cause_select", "Select Causes of Death:",
                                                  choices = unique(combined_data$`Multiple Cause of death`),
                                                  selected = c("Heroin", "Methadone",
@@ -134,6 +134,8 @@ ui <- navbarPage("Overdose Visualization Dashboard",
 
 server <- function(input, output, session) {
   
+    
+    ### Plot: State Trends by Region (faceted)
   ### Plot: State Trends by Region (faceted)
   output$overdosePlot <- renderPlot({
     filtered_data <- combined_data |>
@@ -146,17 +148,27 @@ server <- function(input, output, session) {
            aes(x = Year, y = `Crude Rate`, color = `Multiple Cause of death`)) +
       geom_line(aes(group = interaction(`Residence State`, `Multiple Cause of death`)), alpha = 0.6) +
       geom_point(alpha = 0.7) +
-      facet_wrap(~ `Residence State`) +
+      facet_wrap(~ `Residence State`, ncol = 3) +  # Keep facets organized
+      scale_x_continuous(breaks = 2018:2023) +
       labs(
         title = paste("Overdose Rates by Cause of Death -", input$region_select),
         x = "Year",
         y = "Crude Rate",
         color = "Cause of Death"
       ) +
+      guides(color = guide_legend(nrow = 2)) +
       theme_minimal(base_size = 12) +
-      scale_x_continuous(breaks = 2018:2023) +
-      theme(legend.position = "bottom")
+      theme(
+        legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.line = element_line(color = "black", size = 0.5),    # Solid axis lines
+        panel.grid.major = element_line(color = "grey90"),         # Light gridlines
+        panel.grid.minor = element_blank(),                        # Optional: remove minor gridlines
+        axis.ticks = element_line(color = "black") ,                # Solid ticks
+        plot.margin = margin(t = 20, r = 10, b = 10, l = 10)
+      )
   })
+  
   
   ### Reactive: Wide-format map data
   map_data_wide <- reactive({
