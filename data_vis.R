@@ -98,6 +98,96 @@ ggplot(combined_data |>
   theme(legend.position = "bottom")
 
 
+#regionalized facets 
+
+# Make a state -> region lookup
+state_region_lookup <- tibble(
+  `Residence State` = state.name,
+  region = state.region
+)
+
+
+# Join it in
+combined_data <- combined_data |>
+  left_join(state_region_lookup, by = "Residence State")
+
+
+
+ggplot(combined_data |>
+         filter(!is.na(`Crude Rate`),
+                region == "West",
+                `Multiple Cause of death` %in% c("Heroin", "Methadone",
+                                                 "Other synthetic narcotics", "Cocaine",
+                                                 "Psychostimulants with abuse potential"),
+                Year >= 2018 & Year <= 2023),
+       aes(x = Year, y = `Crude Rate`, color = `Multiple Cause of death`)) +
+  geom_line(aes(group = interaction(`Residence State`, `Multiple Cause of death`)), alpha = 0.6) +
+  geom_point(alpha = 0.7) +
+  facet_wrap(~ `Residence State`) +
+  labs(
+    title = "Crude Overdose Rate by Cause of Death (Faceted by State - West Region)",
+    x = "Year",
+    y = "Crude Rate",
+    color = "Cause of Death"
+  ) +
+  theme_minimal(base_size = 12) +
+  scale_x_continuous(breaks = 2018:2023) +
+  theme(legend.position = "bottom")
+
+
+#shiny
+
+
+ui <- fluidPage(
+  titlePanel("Overdose Rates by State and Cause of Death"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("region_select", "Select Region:",
+                  choices = unique(combined_data$region), selected = "West"),
+      checkboxGroupInput("cause_select", "Select Causes of Death:",
+                         choices = unique(combined_data$`Multiple Cause of death`),
+                         selected = c("Heroin", "Methadone",
+                                      "Other synthetic narcotics", "Cocaine",
+                                      "Psychostimulants with abuse potential"))
+    ),
+    
+    mainPanel(
+      plotOutput("overdosePlot", height = "800px")
+    )
+  )
+)
+
+server <- function(input, output) {
+  
+  output$overdosePlot <- renderPlot({
+    filtered_data <- combined_data |>
+      filter(!is.na(`Crude Rate`),
+             region == input$region_select,
+             `Multiple Cause of death` %in% input$cause_select,
+             Year >= 2018 & Year <= 2023)
+    
+    ggplot(filtered_data,
+           aes(x = Year, y = `Crude Rate`, color = `Multiple Cause of death`)) +
+      geom_line(aes(group = interaction(`Residence State`, `Multiple Cause of death`)), alpha = 0.6) +
+      geom_point(alpha = 0.7) +
+      facet_wrap(~ `Residence State`) +
+      labs(
+        title = paste("Overdose Rates by Cause of Death -", input$region_select),
+        x = "Year",
+        y = "Crude Rate",
+        color = "Cause of Death"
+      ) +
+      theme_minimal(base_size = 12) +
+      scale_x_continuous(breaks = 2018:2023) +
+      theme(legend.position = "bottom")
+  })
+}
+
+shinyApp(ui, server)
+
+
+
 #ggplot with national data 
 
 ggplot(national, aes(x = Year, y = crude_rate, group = `Multiple Cause of death`, color = `Multiple Cause of death`)) +
@@ -237,7 +327,7 @@ leaflet(states_map) |>
 
 
 ui <- fluidPage(
-  titlePanel("Opioid Dispensing & Mortality"),
+  titlePanel("Intervention Dispensing and Mortality"),
   
   sidebarLayout(
     sidebarPanel(
