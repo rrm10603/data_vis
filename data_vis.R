@@ -135,58 +135,6 @@ ggplot(combined_data |>
   theme(legend.position = "bottom")
 
 
-#shiny
-
-
-ui <- fluidPage(
-  titlePanel("Overdose Rates by State and Cause of Death"),
-  
-  sidebarLayout(
-    sidebarPanel(
-      selectInput("region_select", "Select Region:",
-                  choices = unique(combined_data$region), selected = "West"),
-      checkboxGroupInput("cause_select", "Select Causes of Death:",
-                         choices = unique(combined_data$`Multiple Cause of death`),
-                         selected = c("Heroin", "Methadone",
-                                      "Other synthetic narcotics", "Cocaine",
-                                      "Psychostimulants with abuse potential"))
-    ),
-    
-    mainPanel(
-      plotOutput("overdosePlot", height = "800px")
-    )
-  )
-)
-
-server <- function(input, output) {
-  
-  output$overdosePlot <- renderPlot({
-    filtered_data <- combined_data |>
-      filter(!is.na(`Crude Rate`),
-             region == input$region_select,
-             `Multiple Cause of death` %in% input$cause_select,
-             Year >= 2018 & Year <= 2023)
-    
-    ggplot(filtered_data,
-           aes(x = Year, y = `Crude Rate`, color = `Multiple Cause of death`)) +
-      geom_line(aes(group = interaction(`Residence State`, `Multiple Cause of death`)), alpha = 0.6) +
-      geom_point(alpha = 0.7) +
-      facet_wrap(~ `Residence State`) +
-      labs(
-        title = paste("Overdose Rates by Cause of Death -", input$region_select),
-        x = "Year",
-        y = "Crude Rate",
-        color = "Cause of Death"
-      ) +
-      theme_minimal(base_size = 12) +
-      scale_x_continuous(breaks = 2018:2023) +
-      theme(legend.position = "bottom")
-  })
-}
-
-shinyApp(ui, server)
-
-
 
 #ggplot with national data 
 
@@ -325,69 +273,102 @@ leaflet(states_map) |>
 
 #shiny 
 
-
-ui <- fluidPage(
-  titlePanel("Intervention Dispensing and Mortality"),
-  
-  sidebarLayout(
-    sidebarPanel(
-      sliderInput("year", "Select Year:", min = 2019, max = 2023, value = 2019, sep = ""),
-      selectInput("disp_var", "Select Dispensing Rate:", 
-                  choices = c("Naloxone" = "naloxone_disp", 
-                              "Buprenorphine" = "bupe_disp"),
-                  selected = "naloxone_disp")
-    ),
-    
-    mainPanel(
-      leafletOutput("map", height = 700)
-    )
-  )
+ui <- navbarPage("Overdose Visualization Dashboard",
+                 
+                 tabPanel("State Trends (Faceted)",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput("region_select", "Select Region:",
+                                          choices = unique(combined_data$region), selected = "West"),
+                              checkboxGroupInput("cause_select", "Select Causes of Death:",
+                                                 choices = unique(combined_data$`Multiple Cause of death`),
+                                                 selected = c("Heroin", "Methadone",
+                                                              "Other synthetic narcotics", "Cocaine",
+                                                              "Psychostimulants with abuse potential"))
+                            ),
+                            mainPanel(
+                              plotOutput("overdosePlot", height = "800px")
+                            )
+                          )
+                 ),
+                 
+                 tabPanel("Choropleth Map",
+                          sidebarLayout(
+                            sidebarPanel(
+                              sliderInput("year", "Select Year:", min = 2019, max = 2023, value = 2019, sep = ""),
+                              selectInput("disp_var", "Select Dispensing Rate:", 
+                                          choices = c("Naloxone" = "naloxone_disp", 
+                                                      "Buprenorphine" = "bupe_disp"),
+                                          selected = "naloxone_disp")
+                            ),
+                            mainPanel(
+                              leafletOutput("map", height = 700)
+                            )
+                          )
+                 )
 )
 
 server <- function(input, output, session) {
   
-  disp_var <- reactive({ input$disp_var })
-  
-  color_pal <- reactive({
-    if (disp_var() == "naloxone_disp") {
-      colorFactor(palette = brewer.pal(4, "Blues"), 
-                  domain = states_map()[[disp_var()]],
-                  ordered = TRUE)
-    } else {
-      colorFactor(palette = brewer.pal(4, "Reds"), 
-                  domain = states_map()[[disp_var()]],
-                  ordered = TRUE)
-    }
+  ### Plot: State Trends by Region (faceted)
+  output$overdosePlot <- renderPlot({
+    filtered_data <- combined_data |>
+      filter(!is.na(`Crude Rate`),
+             region == input$region_select,
+             `Multiple Cause of death` %in% input$cause_select,
+             Year >= 2018 & Year <= 2023)
+    
+    ggplot(filtered_data,
+           aes(x = Year, y = `Crude Rate`, color = `Multiple Cause of death`)) +
+      geom_line(aes(group = interaction(`Residence State`, `Multiple Cause of death`)), alpha = 0.6) +
+      geom_point(alpha = 0.7) +
+      facet_wrap(~ `Residence State`) +
+      labs(
+        title = paste("Overdose Rates by Cause of Death -", input$region_select),
+        x = "Year",
+        y = "Crude Rate",
+        color = "Cause of Death"
+      ) +
+      theme_minimal(base_size = 12) +
+      scale_x_continuous(breaks = 2018:2023) +
+      theme(legend.position = "bottom")
   })
   
+  ### Reactive: Wide-format map data
   map_data_wide <- reactive({
     map_data |>
       filter(Year == input$year) |>
       select(State, naloxone_disp, bupe_disp, cause, crude_rate) |>
-      pivot_wider(
-        names_from = cause,
-        values_from = crude_rate
-      ) |>
+      pivot_wider(names_from = cause, values_from = crude_rate) |>
       distinct()
   })
   
+  ### Reactive: Spatial join
   states_map <- reactive({
     states_sf |>
       left_join(map_data_wide(), by = c("name" = "State"))
   })
   
+  ### Reactive: Palette
+  color_pal <- reactive({
+    palette <- if (input$disp_var == "naloxone_disp") "Blues" else "Reds"
+    colorFactor(palette = brewer.pal(4, palette), 
+                domain = states_map()[[input$disp_var]], ordered = TRUE)
+  })
+  
+  ### Map Output
   output$map <- renderLeaflet({
     leaflet(states_map()) |>
       addProviderTiles("CartoDB.Positron") |>
       setView(lng = -98.5795, lat = 39.8283, zoom = 3.5) |>
       addPolygons(
-        fillColor = ~color_pal()(get(disp_var())),
+        fillColor = ~color_pal()(get(input$disp_var)),
         color = "white",
         weight = 1,
         fillOpacity = 0.7,
         label = ~paste0(
           name, "<br>",
-          if (disp_var() == "naloxone_disp") {
+          if (input$disp_var == "naloxone_disp") {
             paste0("Naloxone Rate: ", naloxone_disp)
           } else {
             paste0("Buprenorphine Rate: ", bupe_disp)
@@ -407,8 +388,8 @@ server <- function(input, output, session) {
       ) |>
       addLegend(
         pal = color_pal(),
-        values = ~get(disp_var()),
-        title = if (disp_var() == "naloxone_disp") {
+        values = ~get(input$disp_var),
+        title = if (input$disp_var == "naloxone_disp") {
           "Naloxone Dispensing Rate"
         } else {
           "Buprenorphine Dispensing Rate"
@@ -418,4 +399,6 @@ server <- function(input, output, session) {
   })
 }
 
+
 shinyApp(ui = ui, server = server)
+
