@@ -13,35 +13,6 @@ library(usmap)
 # read files 
 
 
-
-###############3
-
-#static plot of plot_usmapsjoin: 
-
-# Prepare data
-#map_df <- map_data |>
- # filter(Year == 2021) |>   # Choose year
-#  select(State, naloxone_disp) |>
-#  distinct() |>
- # left_join(tibble(State = state.name, abbr = state.abb), by = "State") |>
- # rename(state = abbr)  # plot_usmap() needs this column
-
-# static Plot
-#plot_usmap(data = map_df, values = "naloxone_disp", regions = "states") +
-  #scale_fill_manual(
-   # values = c("<0.2" = "#deebf7", "0.2 - 0.4" = "#9ecae1", "0.5 - 0.6" = "#3182bd", ">0.6" = "#08519c"),
-   # drop = FALSE
-  #) +
- # labs(title = "Naloxone Dispensing Rate by State (2021)", fill = "Disp. Rate") +
-#  theme(legend.position = "right")
-
-
-
-
-
-
-###############
-
 url <- "https://public.opendatasoft.com/explore/dataset/us-state-boundaries/download/?format=geojson"
 states_sf <- sf::st_read(url)
 
@@ -87,7 +58,7 @@ combined_data <- wonder |>
   left_join(bp, by = c("Residence State" = "STATE_NAME", "Year" = "YEAR")) |>
   left_join(naloxone, by = c("Residence State" = "STATE_NAME", "Year" = "YEAR"))
 
-#create national summary data frame 
+#create interention map data
 
 map_data <- combined_data |>
   filter(Year %in% 2019:2023) |>
@@ -100,10 +71,10 @@ map_data <- combined_data |>
   mutate(naloxone_disp = factor(naloxone_disp, 
                                 levels = c("<0.2", "0.2 - 0.4", "0.5 - 0.6", ">0.6"),
                                 ordered = TRUE),
-         buprenorphine_disp = factor(buprenorphine_disp,
-                                     levels = c(">7.0","4.8 - 7.0", "<2.8" , "2.8 - 4.7"),
-                                     ordered=TRUE))
-
+          buprenorphine_disp = factor(buprenorphine_disp,
+                                      levels = c(">7.0","4.8 - 7.0", "<2.8" , "2.8 - 4.7"),
+                                      ordered=TRUE))
+         
 
 
 #regionalized facets 
@@ -126,9 +97,6 @@ combined_data <- combined_data |>
 
 
 
-
-
-
 #shiny 
 
 ui <- navbarPage("Overdose Visualization Dashboard",
@@ -137,39 +105,39 @@ ui <- navbarPage("Overdose Visualization Dashboard",
                           sidebarLayout(
                             sidebarPanel(
                               selectInput("region_select", "Select Region:",
-                                          choices = unique(na.omit(combined_data$region)), selected = "South"),
-                              checkboxGroupInput("cause_select", "Select Causes of Death:",
-                                                 choices = unique(combined_data$`Multiple Cause of death`),
-                                                 selected = c("Heroin", "Methadone",
-                                                              "Other synthetic narcotics", "Cocaine",
-                                                              "Psychostimulants with abuse potential"))
-                            ),
-                            mainPanel(
-                              plotOutput("overdosePlot", height = "800px")
-                            )
-                          )
-                 ),
-                 
-                 tabPanel("Choropleth Map",
-                          sidebarLayout(
-                            sidebarPanel(
-                              sliderInput("year", "Select Year:", min = 2019, max = 2023, value = 2019, sep = ""),
-                              selectInput("disp_var", "Select Dispensing Rate:", 
-                                          choices = c("Naloxone" = "naloxone_disp", 
-                                                      "Buprenorphine" = "buprenorphine_disp"),
-                                          selected = "naloxone_disp")
-                            ),
-                            mainPanel(
-                              plotOutput("mapPlot", height = "700px")
-                            )
+                                          
+                              choices = unique(na.omit(combined_data$region)), selected = "South"),
+                            checkboxGroupInput("cause_select", "Select Causes of Death:",
+                                               choices = unique(combined_data$`Multiple Cause of death`),
+                                               selected = c("Heroin", "Methadone",
+                                                            "Other synthetic narcotics", "Cocaine",
+                                                            "Psychostimulants with abuse potential"))
+                          ),
+                          mainPanel(
+                            plotOutput("overdosePlot", height = "800px")
                           )
                  )
-)
+),
+
+tabPanel("Choropleth Map",
+         sidebarLayout(
+           sidebarPanel(
+             sliderInput("year", "Select Year:", min = 2019, max = 2023, value = 2019, sep = ""),
+             selectInput("disp_var", "Select Dispensing Rate:", 
+                         choices = c("Naloxone" = "naloxone_disp", 
+                                     "Buprenorphine" = "buprenorphine_disp"),
+                         selected = "naloxone_disp")
+           ),
+           mainPanel(
+             leafletOutput("map", height = 700)
+           )
+         )
+))
+
 
 server <- function(input, output, session) {
   
   
-  ### Plot: State Trends by Region (faceted)
   ### Plot: State Trends by Region (faceted)
   output$overdosePlot <- renderPlot({
     filtered_data <- combined_data |>
@@ -182,7 +150,8 @@ server <- function(input, output, session) {
            aes(x = Year, y = `Crude Rate`, color = `Multiple Cause of death`)) +
       geom_line(aes(group = interaction(`Residence State`, `Multiple Cause of death`)), alpha = 0.6) +
       geom_point(alpha = 0.7) +
-      facet_wrap(~ `Residence State`, ncol = 3) +  # Keep facets organized
+      facet_wrap(~ `Residence State`, ncol = 3) +
+      
       scale_x_continuous(breaks = 2018:2023) +
       labs(
         title = paste("Overdose Rates by Cause of Death -", input$region_select),
@@ -192,15 +161,15 @@ server <- function(input, output, session) {
       ) +
       guides(color = guide_legend(nrow = 2)) +
       theme_minimal(base_size = 12) +
-      theme(
-        legend.position = "bottom",
-        axis.text.x = element_text(angle = 45, hjust = 1),
-        axis.line = element_line(color = "black", size = 0.5),    # Solid axis lines
-        panel.grid.major = element_line(color = "grey90"),         # Light gridlines
-        panel.grid.minor = element_blank(),                        # Optional: remove minor gridlines
-        axis.ticks = element_line(color = "black") ,                # Solid ticks
-        plot.margin = margin(t = 20, r = 10, b = 10, l = 10)
-      )
+    theme(
+      legend.position = "bottom",
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.line = element_line(color = "black", size = 0.5),    # Solid axis lines
+      panel.grid.major = element_line(color = "grey90"),         # Light gridlines
+      panel.grid.minor = element_blank(),                        # Optional: remove minor gridlines
+      axis.ticks = element_line(color = "black") ,                # Solid ticks
+      plot.margin = margin(t = 20, r = 10, b = 10, l = 10)
+    )
   })
   
   
@@ -213,40 +182,60 @@ server <- function(input, output, session) {
       distinct()
   })
   
-  ### Reactive: USMap-formatted data
-  map_df_usmap <- reactive({
-    disp_var <- input$disp_var
-    
-    map_data |>
-      filter(Year == input$year) |>
-      select(State, {{disp_var}}) |>
-      distinct() |>
-      left_join(tibble(State = state.name, state = state.abb), by = "State")
+  ### Reactive: Spatial join
+  states_map <- reactive({
+    states_sf |>
+      left_join(map_data_wide(), by = c("name" = "State"))
   })
   
-  ### Map Output using plot_usmap
-  output$mapPlot <- renderPlot({
-    disp_var <- input$disp_var
-    plot_df <- map_df_usmap()
-    
-    color_vals <- c("<0.2" = "#deebf7", "0.2 - 0.4" = "#9ecae1", "0.5 - 0.6" = "#3182bd", ">0.6" = "#08519c")
-    if (disp_var == "buprenorphine_disp") {
-      color_vals <- c("<2.8" = "#fee5d9", "2.8 - 4.7" = "#fcae91", "4.8 - 7.0" = "#fb6a4a", ">7.0" = "#cb181d")
-    }
-    
-    plot_usmap(data = plot_df, values = disp_var, regions = "states") +
-      scale_fill_manual(
-        values = color_vals,
-        drop = FALSE
-      ) +
-      labs(
-        title = paste(ifelse(disp_var == "naloxone_disp", "Naloxone", "Buprenorphine"),
-                      "Dispensing Rate by State (", input$year, ")", sep = " "),
-        fill = "Disp. Rate"
-      ) +
-      theme(legend.position = "right")
+  ### Reactive: Palette
+  color_pal <- reactive({
+    palette <- if (input$disp_var == "naloxone_disp") "Blues" else "Reds"
+    colorFactor(palette = brewer.pal(4, palette), 
+                domain = states_map()[[input$disp_var]], ordered = TRUE)
   })
   
+  ### Map Output
+  output$map <- renderLeaflet({
+    leaflet(states_map()) |>
+      addProviderTiles("CartoDB.Positron") |>
+      setView(lng = -98.5795, lat = 39.8283, zoom = 3.5) |>
+      addPolygons(
+        fillColor = ~color_pal()(get(input$disp_var)),
+        color = "white",
+        weight = 1,
+        fillOpacity = 0.7,
+        label = ~paste0(
+          name, "<br>",
+          if (input$disp_var == "naloxone_disp") {
+            paste0("Naloxone Rate: ", naloxone_disp)
+          } else {
+            paste0("Buprenorphine Rate: ", buprenorphine_disp)
+          }, "<br><br>",
+          "Heroin: ", round(Heroin, 1), "<br>",
+          "Methadone: ", round(Methadone, 1), "<br>",
+          "Cocaine: ", round(Cocaine, 1), "<br>",
+          "Other synthetics: ", round(`Other synthetic narcotics`, 1), "<br>",
+          "Psychostimulants: ", round(`Psychostimulants with abuse potential`, 1)
+        ) |> lapply(htmltools::HTML),
+        highlightOptions = highlightOptions(
+          weight = 2,
+          color = "#666",
+          fillOpacity = 0.9,
+          bringToFront = TRUE
+        )
+      ) |>
+      addLegend(
+        pal = color_pal(),
+        values = ~get(input$disp_var),
+        title = if (input$disp_var == "naloxone_disp") {
+          "Naloxone Dispensing Rate"
+        } else {
+          "Buprenorphine Dispensing Rate"
+        },
+        position = "bottomright"
+      )
+  })
 }
 
 
