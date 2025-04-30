@@ -16,24 +16,24 @@ library(usmap)
 
 ###############3
 
-#static plot: 
+#static plot of plot_usmapsjoin: 
 
 # Prepare data
-map_df <- map_data |>
-  filter(Year == 2021) |>   # Choose year
-  select(State, naloxone_disp) |>
-  distinct() |>
-  left_join(tibble(State = state.name, abbr = state.abb), by = "State") |>
-  rename(state = abbr)  # plot_usmap() needs this column
+#map_df <- map_data |>
+ # filter(Year == 2021) |>   # Choose year
+#  select(State, naloxone_disp) |>
+#  distinct() |>
+ # left_join(tibble(State = state.name, abbr = state.abb), by = "State") |>
+ # rename(state = abbr)  # plot_usmap() needs this column
 
-# Plot
-plot_usmap(data = map_df, values = "naloxone_disp", regions = "states") +
-  scale_fill_manual(
-    values = c("<0.2" = "#deebf7", "0.2 - 0.4" = "#9ecae1", "0.5 - 0.6" = "#3182bd", ">0.6" = "#08519c"),
-    drop = FALSE
-  ) +
-  labs(title = "Naloxone Dispensing Rate by State (2021)", fill = "Disp. Rate") +
-  theme(legend.position = "right")
+# static Plot
+#plot_usmap(data = map_df, values = "naloxone_disp", regions = "states") +
+  #scale_fill_manual(
+   # values = c("<0.2" = "#deebf7", "0.2 - 0.4" = "#9ecae1", "0.5 - 0.6" = "#3182bd", ">0.6" = "#08519c"),
+   # drop = FALSE
+  #) +
+ # labs(title = "Naloxone Dispensing Rate by State (2021)", fill = "Disp. Rate") +
+#  theme(legend.position = "right")
 
 
 
@@ -100,10 +100,10 @@ map_data <- combined_data |>
   mutate(naloxone_disp = factor(naloxone_disp, 
                                 levels = c("<0.2", "0.2 - 0.4", "0.5 - 0.6", ">0.6"),
                                 ordered = TRUE),
-          buprenorphine_disp = factor(buprenorphine_disp,
-                                      levels = c(">7.0","4.8 - 7.0", "<2.8" , "2.8 - 4.7"),
-                                      ordered=TRUE))
-         
+         buprenorphine_disp = factor(buprenorphine_disp,
+                                     levels = c(">7.0","4.8 - 7.0", "<2.8" , "2.8 - 4.7"),
+                                     ordered=TRUE))
+
 
 
 #regionalized facets 
