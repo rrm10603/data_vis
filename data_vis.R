@@ -9,7 +9,7 @@ library(shiny)
 library(htmltools)
 library(usmap)
 
-
+#modified output (file) and select input UI. usa region added 
 # read files 
 
 
@@ -28,15 +28,15 @@ wonder <- wonder |>
   filter(Year != "2024 (provisional") |>
   mutate(`Crude Rate` = as.numeric(ifelse(`Crude Rate` == "Unreliable", NA, `Crude Rate`)))
 #linux path
-dose <- read.delim("/home/robmcneil/Documents/data_vis/vis_project/cdc_dose.txt")
+#dose <- read.delim("/home/robmcneil/Documents/data_vis/vis_project/cdc_dose.txt")
 #windows path 
 #dose <- read.delim("C:/Users/rrm10/OneDrive/Desktop/vis_project/cdc_dose.txt")
-dose <- dose |>
-  mutate(across(starts_with("X"), ~ as.numeric(.))) |>
-  `colnames<-`(gsub("^X", "", colnames(dose))) |>
-  pivot_longer(cols = -State,               
-               names_to = "Year",            
-               values_to = "Dose Rate")     
+#dose <- dose |>
+  #mutate(across(starts_with("X"), ~ as.numeric(.))) |>
+  #`colnames<-`(gsub("^X", "", colnames(dose))) |>
+ # pivot_longer(cols = -State,               
+          #     names_to = "Year",            
+           #    values_to = "Dose Rate")     
 #linux  path
 bp<-read.csv("/home/robmcneil/Documents/data_vis/vis_project/State Buprenorphine Dispensing Rates.csv")
 #windows path
@@ -47,14 +47,14 @@ naloxone <-read.csv("/home/robmcneil/Documents/data_vis/vis_project/State Naloxo
 #naloxone <-read.csv("C:/Users/rrm10/OneDrive/Desktop/vis_project/State Naloxone Dispensing Rates (1).csv")
 
 
-dose$Year <- as.integer(dose$Year)
+#dose$Year <- as.integer(dose$Year)
 wonder$Year <- as.integer(wonder$Year)
 bp$YEAR <- as.integer(bp$YEAR)
 naloxone$YEAR <- as.integer(naloxone$YEAR)
 
 
 combined_data <- wonder |>
-  left_join(dose, by = c("Residence State" = "State", "Year" = "Year"))|>
+ # left_join(dose, by = c("Residence State" = "State", "Year" = "Year"))|>
   left_join(bp, by = c("Residence State" = "STATE_NAME", "Year" = "YEAR")) |>
   left_join(naloxone, by = c("Residence State" = "STATE_NAME", "Year" = "YEAR"))
 
@@ -90,8 +90,85 @@ state_region_lookup <- tibble(
 combined_data <- combined_data |>
   left_join(state_region_lookup, by = "Residence State")
 
+###adding row for national level data
 
 
+# Create the national summary with all necessary columns
+national_rows <- combined_data |>
+  filter(Year %in% 2019:2023) |>
+  group_by(Year, `Multiple Cause of death`, `Multiple Cause of death Code`) |>
+  summarize(
+    Deaths = sum(Deaths, na.rm = TRUE),
+    Population = sum(Population, na.rm = TRUE),
+    `Crude Rate` = (Deaths / Population) * 100000,
+    buprenorphine_dispensing_rate = first(buprenorphine_dispensing_rate),
+    naloxone_dispensing_rate = first(naloxone_dispensing_rate),
+    .groups = "drop"
+  ) |>
+  mutate(
+    `Residence State` = "United States",
+    `Residence State Code` = NA_real_,
+    STATE_ABBREV.x = NA_character_,
+    STATE_FIPS.x = NA_integer_,
+    Buprenorphine.Dispensing.Rate..per.100.persons. = NA_character_,
+    STATE_ABBREV.y = NA_character_,
+    STATE_FIPS.y = NA_integer_,
+    Naloxone.Dispensing.Rate..per.100.persons. = NA_character_,
+    region = NA,  # Or assign a value like "National"
+    # Reorder columns to match combined_data
+  ) |>
+  select(names(combined_data))  # Ensure same column order
+
+# Append the national rows to the original dataset
+combined_with_national <- bind_rows(combined_data, national_rows)
+
+#national rate
+
+
+# Step 1: Create a pared-down state-level dataset
+state_data <- combined_data |>
+  filter(Year %in% 2018:2023) |>
+  select(
+    `Residence State`,
+    Year,
+    `Multiple Cause of death`,
+    `Crude Rate`,
+    Deaths,
+    Population,
+    region
+  )
+
+# Step 2: Create national-level rows
+national_data <- state_data |>
+  group_by(Year, `Multiple Cause of death`) |>
+  summarise(
+    Deaths = sum(Deaths, na.rm = TRUE),
+    Population = sum(Population, na.rm = TRUE),
+    `Crude Rate` = (Deaths / Population) * 100000,
+    .groups = "drop"
+  ) |>
+  mutate(
+    `Residence State` = "United States",
+    region = "National"
+  ) |>
+  select(
+    `Residence State`,
+    Year,
+    `Multiple Cause of death`,
+    `Crude Rate`,
+    Deaths,
+    Population,
+    region
+  )
+
+# Step 3: Combine both into a clean dataset
+final_data <- bind_rows(state_data, national_data)
+
+
+
+
+
+#
 
 
 
@@ -106,7 +183,7 @@ ui <- navbarPage("Overdose Visualization Dashboard",
                             sidebarPanel(
                               selectInput("region_select", "Select Region:",
                                           
-                              choices = unique(na.omit(combined_data$region)), selected = "South"),
+                              choices = unique(na.omit(final_data$region)), selected = "South"),
                             checkboxGroupInput("cause_select", "Select Causes of Death:",
                                                choices = unique(combined_data$`Multiple Cause of death`),
                                                selected = c("Heroin", "Methadone",
@@ -140,7 +217,7 @@ server <- function(input, output, session) {
   
   ### Plot: State Trends by Region (faceted)
   output$overdosePlot <- renderPlot({
-    filtered_data <- combined_data |>
+    filtered_data <- final_data |>
       filter(!is.na(`Crude Rate`),
              region == input$region_select,
              `Multiple Cause of death` %in% input$cause_select,
@@ -150,7 +227,7 @@ server <- function(input, output, session) {
            aes(x = Year, y = `Crude Rate`, color = `Multiple Cause of death`)) +
       geom_line(aes(group = interaction(`Residence State`, `Multiple Cause of death`)), alpha = 0.6) +
       geom_point(alpha = 0.7) +
-      facet_wrap(~ `Residence State`, ncol = 3) +
+      facet_wrap(~ `Residence State`, ncol = 3,scales="free_y") +
       
       scale_x_continuous(breaks = 2018:2023) +
       labs(
