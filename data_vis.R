@@ -72,7 +72,7 @@ map_data <- combined_data |>
                                 levels = c("<0.2", "0.2 - 0.4", "0.5 - 0.6", ">0.6"),
                                 ordered = TRUE),
           buprenorphine_disp = factor(buprenorphine_disp,
-                                      levels = c(">7.0","4.8 - 7.0", "<2.8" , "2.8 - 4.7"),
+                                      levels = c("<2.8","2.8 - 4.7","4.8 - 7.0",">7.0"),
                                       ordered=TRUE))
          
 
