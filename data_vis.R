@@ -79,53 +79,20 @@ map_data <- combined_data |>
 
 #regionalized facets 
 
-# Make a state -> region lookup
 state_region_lookup <- tibble(
   `Residence State` = state.name,
   region = state.region
 )
 
-
-# Join it in
+#join 
 combined_data <- combined_data |>
   left_join(state_region_lookup, by = "Residence State")
 
 ###adding row for national level data
 
-
-# Create the national summary with all necessary columns
-national_rows <- combined_data |>
-  filter(Year %in% 2019:2023) |>
-  group_by(Year, `Multiple Cause of death`, `Multiple Cause of death Code`) |>
-  summarize(
-    Deaths = sum(Deaths, na.rm = TRUE),
-    Population = sum(Population, na.rm = TRUE),
-    `Crude Rate` = (Deaths / Population) * 100000,
-    buprenorphine_dispensing_rate = first(buprenorphine_dispensing_rate),
-    naloxone_dispensing_rate = first(naloxone_dispensing_rate),
-    .groups = "drop"
-  ) |>
-  mutate(
-    `Residence State` = "United States",
-    `Residence State Code` = NA_real_,
-    STATE_ABBREV.x = NA_character_,
-    STATE_FIPS.x = NA_integer_,
-    Buprenorphine.Dispensing.Rate..per.100.persons. = NA_character_,
-    STATE_ABBREV.y = NA_character_,
-    STATE_FIPS.y = NA_integer_,
-    Naloxone.Dispensing.Rate..per.100.persons. = NA_character_,
-    region = NA,  # Or assign a value like "National"
-    # Reorder columns to match combined_data
-  ) |>
-  select(names(combined_data))  # Ensure same column order
-
-# Append the national rows to the original dataset
-combined_with_national <- bind_rows(combined_data, national_rows)
-
-#national rate
+#national rate for line graph idiom 
 
 
-# Step 1: Create a pared-down state-level dataset
 state_data <- combined_data |>
   filter(Year %in% 2018:2023) |>
   select(
@@ -138,7 +105,7 @@ state_data <- combined_data |>
     region
   )
 
-# Step 2: Create national-level rows
+# national-level rows
 national_data <- state_data |>
   group_by(Year, `Multiple Cause of death`) |>
   summarise(
@@ -161,20 +128,13 @@ national_data <- state_data |>
     region
   )
 
-# Step 3: Combine both into a clean dataset
+# Combine
 final_data <- bind_rows(state_data, national_data)
 
 
 
-
-
-#
-
-
-
-
-
-#shiny 
+#shiny (primarily used Carsten's lecture (and lecture from R for data science class)to guide my UI structuring,
+#and utilized AI to help me write the app)
 
 ui <- navbarPage("Overdose Visualization Dashboard",
                  
